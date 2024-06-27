@@ -1,7 +1,7 @@
 ---
 title: "Fluconazole data analysis"
 author: "R. Cunning"
-date: "2024-02-15"
+date: "2024-06-27"
 output: html_document
 editor_options: 
   chunk_output_type: console
@@ -12,7 +12,6 @@ knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 ```
 
 ```{r}
-
 # Load libraries
 library(gam)
 library(tidyverse)
@@ -157,7 +156,7 @@ res <- as_tibble(all)
 res %>%
   ggplot(aes(x = date, y = emmean, group = treatment, color = treatment)) +
   geom_point() + 
-  geom_errorbar(aes(ymin = asymp.LCL, ymax = asymp.UCL), width = 0.3) +
+  geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), width = 0.3) +
   geom_line() +
   geom_vline(aes(xintercept = as_date("2024-01-03")), lty = 2) +
   scale_x_date(breaks = unique(bry$date)) +
@@ -183,7 +182,7 @@ edges <- lmer(value ~ treatment * factor(date) + (1|tank),
 alledges <- emmeans(edges, specs = "treatment", by = "date", level = 0.87)
 
 # Statistically compare these marginal means through pairwise contrasts
-resedges <- as_tibble(contrast(alledges, "pairwise"))
+resedges <- as_tibble(contrast(alledges, "pairwise", adjust = "none"))
 
 # When do we see significant differences by treatment in the edges?
 sigedges <- resedges %>%
@@ -192,7 +191,7 @@ sigedges <- resedges %>%
 as_tibble(alledges) %>%
   ggplot(aes(x = date, y = emmean, color = treatment, value = treatment)) +
   geom_point() + 
-  geom_errorbar(aes(ymin = asymp.LCL, ymax = asymp.UCL), width = 0.3) +
+  geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), width = 0.3) +
   geom_line() +
   geom_vline(aes(xintercept = as_date("2024-01-03")), lty = 2) +
   scale_x_date(breaks = unique(bry$date)) +
@@ -218,13 +217,13 @@ mod<-lmer(value~trt2*factor(date)+(1|tank),data=filter(bry2, area == "edge"))
 # Means at each individual date
 alltrt2 <- emmeans(mod, specs = "trt2", by = "date", level = 0.87)
 # Statistically compare these marginal means through pairwise contrasts
-restrt2 <- contrast(alltrt2, "pairwise")
+restrt2 <- contrast(alltrt2, "pairwise", adjust = "none")
 # there are differences between control and 4xtreated tanks, when looking at Bryopsis tips only
 
 as_tibble(alltrt2) %>%
   ggplot(aes(x = date, y = emmean, group = trt2, color = trt2)) +
   geom_point() + 
-  geom_errorbar(aes(ymin = asymp.LCL, ymax = asymp.UCL), width = 0.3) +
+  geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), width = 0.3) +
   geom_line() +
   geom_vline(aes(xintercept = as_date("2024-01-03")), lty = 2) +
   scale_x_date(breaks = unique(bry$date)) +
@@ -239,7 +238,7 @@ sigtrt2 <- as_tibble(restrt2) %>%
 knitr::kable(sigtrt2)
 ```
 
-Combining the treated tanks together, we see that Bryopsis Fv/Fm (edges) is significantly lower in treated tanks vs. control on Jan. 13th, 16th, 18th, and 20th.
+Combining the treated tanks together, we see that Bryopsis Fv/Fm (edges) is significantly lower in treated tanks vs. control on Jan. 13th, 18th, and 20th.
 
 
 # Coral Fv/Fm
@@ -291,7 +290,7 @@ emm <- emmeans(mod, specs = "treatment", by = c("species", "date"), level = 0.87
 as_tibble(emm) %>%
   ggplot(aes(x = date, y = emmean, color = treatment, group = treatment)) +
   geom_point() +
-  geom_errorbar(aes(ymin = asymp.LCL, ymax = asymp.UCL), width = 0.5) +
+  geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), width = 0.5) +
   geom_line() +
   scale_x_date(breaks = unique(bry$date)) +
   facet_wrap(~species) +
@@ -299,10 +298,11 @@ as_tibble(emm) %>%
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   geom_vline(aes(xintercept = as_date("2024-01-03")), lty = 2)
 
-res <- as_tibble(contrast(emm, "pairwise"))
+res <- as_tibble(contrast(emm, "pairwise", adjust = "none"))
 res %>%
   filter(p.value < 0.05) %>%
-  arrange(species, date)
+  arrange(species, date) %>%
+  knitr::kable()
 ```
 
 Acropora corals showed a ~10% decline in Fv/Fm over time, but this occurred in all treatments and the control, so there is no effect of treatment on Fv/Fm in Acropora.
@@ -312,6 +312,42 @@ Seriatopora showed an initial decline in Fv/Fm that was larger in treated corals
 Stylophora also showed an initial decrease that also occurred in the controls. However, the treated corals are significantly lower than the controls during the experiment, on 1/6 and 1/16 (Treatment 1 is lower), and 1/20 and 1/25 (Treatment 5.3 is lower, but again I think that 1/25 readings seem off). Values again recover by the end of the experiment and are not different between treated and control corals.
 
 Overall, there is some indication that fluconazole may temporarily reduce Fv/Fm in in Seriatopora and Stylophora, but these reductions were only around 5% relative to control values, and disappeared after ~2 weeks.
+
+```{r}
+#### Compare 2 control tanks vs. 4 "treated" tanks
+coral2 <- coral %>%
+  mutate(trt2 = case_when(as.numeric(as.character(treatment)) == 0 ~ "control",
+                          as.numeric(as.character(treatment)) > 0  ~ "treated"),
+         trt2 = factor(trt2))
+
+# Fit linear mixed model with treatment and date as fixed predictors, and tank as random
+mod<-lmer(value~trt2*factor(date)*species+(1|tank/species/fragment),data=coral2)
+# Means at each individual date
+alltrt2 <- emmeans(mod, specs = "trt2", by = c("species", "date"), level = 0.87)
+# Statistically compare these marginal means through pairwise contrasts
+restrt2 <- contrast(alltrt2, "pairwise", adjust = "none")
+# there are differences between control and 4xtreated tanks, when looking at Bryopsis tips only
+
+as_tibble(alltrt2) %>%
+  ggplot(aes(x = date, y = emmean, group = trt2, color = trt2)) +
+  facet_wrap(~species) +
+  geom_point() + 
+  geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), width = 0.3) +
+  geom_line() +
+  geom_vline(aes(xintercept = as_date("2024-01-03")), lty = 2) +
+  scale_x_date(breaks = unique(bry$date)) +
+  theme_custom() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Average Fv/Fm of all treated vs. control corals over time")
+
+sigtrt2 <- as_tibble(restrt2) %>% 
+  filter(p.value < 0.05) %>%
+  arrange(species, date)
+
+# When do we see significant differences between control and treated?
+knitr::kable(sigtrt2)
+```
+
 
 
 
