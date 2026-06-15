@@ -1,7 +1,7 @@
 ---
 title: "Fluconazole data analysis"
 author: "R. Cunning"
-date: "2024-06-27"
+date: "2026-06-15"
 output: html_document
 editor_options: 
   chunk_output_type: console
@@ -153,16 +153,16 @@ res <- as_tibble(all)
 
 # Plot means for each treatment over time
 # Plot overall mean for each treatment over time
-res %>%
+(fig1a <- res %>%
   ggplot(aes(x = date, y = emmean, group = treatment, color = treatment)) +
-  geom_point() + 
-  geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), width = 0.3) +
-  geom_line() +
+  geom_line(alpha = 0.5) +
+  geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), width = 0.3, alpha = 0.5) +
+  geom_point(alpha = 0.5, size = 0.75) + 
   geom_vline(aes(xintercept = as_date("2024-01-03")), lty = 2) +
   scale_x_date(breaks = unique(bry$date)) +
   theme_custom() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  labs(title = "Average Fv/Fm of Bryopsis (all areas) in each treatment over time")
+  labs(title = "Average Fv/Fm of Bryopsis (all areas) in each treatment over time"))
 
 # Test for differences between treatments on each date
 pwtests <- as_tibble(contrast(all, "pairwise"))
@@ -220,16 +220,16 @@ alltrt2 <- emmeans(mod, specs = "trt2", by = "date", level = 0.87)
 restrt2 <- contrast(alltrt2, "pairwise", adjust = "none")
 # there are differences between control and 4xtreated tanks, when looking at Bryopsis tips only
 
-as_tibble(alltrt2) %>%
+(fig1b <- as_tibble(alltrt2) %>%
   ggplot(aes(x = date, y = emmean, group = trt2, color = trt2)) +
-  geom_point() + 
-  geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), width = 0.3) +
-  geom_line() +
+  geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), width = 0.3, alpha = 0.5) +
+  geom_line(alpha = 0.5) +
+  geom_point(alpha = 0.5, size = 0.75) + 
   geom_vline(aes(xintercept = as_date("2024-01-03")), lty = 2) +
   scale_x_date(breaks = unique(bry$date)) +
   theme_custom() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  labs(title = "Average Fv/Fm of all treated vs. control Bryopsis edges over time")
+  labs(title = "Average Fv/Fm of all treated vs. control Bryopsis edges over time"))
 
 sigtrt2 <- as_tibble(restrt2) %>% 
   filter(p.value < 0.05)
@@ -239,6 +239,65 @@ knitr::kable(sigtrt2)
 ```
 
 Combining the treated tanks together, we see that Bryopsis Fv/Fm (edges) is significantly lower in treated tanks vs. control on Jan. 13th, 18th, and 20th.
+
+# Figure 1 - final version with two panels
+```{r, fig.width = 5, fig.height = 8}
+figure1_theme <- theme(
+  plot.title = element_text(size = 10, face = "plain"),
+  axis.title = element_text(size = 7),
+  axis.text = element_text(size = 5),
+  legend.title = element_text(size = 7),
+  legend.text = element_text(size = 5)
+)
+
+fig1a <- fig1a +
+  labs(
+    title = expression(
+      paste("A. ", italic("Fv/Fm"), " of ", italic("Bryopsis"),
+            " (all areas) over time")
+    ),
+    x = "Date",
+    y = expression(italic("Fv/Fm")),
+    color = "Fluconazole treatment\n(mg/mL)"
+  ) +
+  figure1_theme
+
+fig1b <- fig1b +
+  labs(
+    title = expression(
+      paste("B. ", italic("Fv/Fm"), " of ", italic("Bryopsis"),
+            " (edges) over time")
+    ),
+    x = "Date",
+    y = expression(italic("Fv/Fm")),
+    color = "Fluconazole treatment"
+  ) +
+  scale_color_discrete(
+    labels = c(
+      control = "Control (0 mg/mL)",
+      treated = "Treated (1 and 5.3 mg/mL)"
+    )
+  ) +
+  figure1_theme
+
+fig1a_grob <- ggplotGrob(fig1a)
+fig1b_grob <- ggplotGrob(fig1b)
+
+# Use identical layout widths so the two panel outlines align despite
+# differences in legend width.
+shared_widths <- grid::unit.pmax(fig1a_grob$widths, fig1b_grob$widths)
+fig1a_grob$widths <- shared_widths
+fig1b_grob$widths <- shared_widths
+
+figure1 <- cowplot::plot_grid(
+  fig1a_grob, fig1b_grob,
+  ncol = 1,
+  align = "v"
+)
+
+figure1
+ggsave(filename = "Figures/fig1.png", width = 90, height = 120, units = "mm", dpi = 300)
+```
 
 
 # Coral Fv/Fm
@@ -287,16 +346,16 @@ mod <- lmer(value ~ factor(date) * treatment * species + (1|tank/species/fragmen
 
 emm <- emmeans(mod, specs = "treatment", by = c("species", "date"), level = 0.87)
 
-as_tibble(emm) %>%
+(fig2 <- as_tibble(emm) %>%
   ggplot(aes(x = date, y = emmean, color = treatment, group = treatment)) +
-  geom_point() +
-  geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), width = 0.5) +
-  geom_line() +
+  geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), width = 0.5, alpha = 0.5) +
+  geom_line(alpha = 0.5) +
+  geom_point(alpha = 0.5, size = 0.75) +
   scale_x_date(breaks = unique(bry$date)) +
   facet_wrap(~species) +
   theme_custom() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  geom_vline(aes(xintercept = as_date("2024-01-03")), lty = 2)
+  geom_vline(aes(xintercept = as_date("2024-01-03")), lty = 2))
 
 res <- as_tibble(contrast(emm, "pairwise", adjust = "none"))
 res %>%
@@ -312,6 +371,26 @@ Seriatopora showed an initial decline in Fv/Fm that was larger in treated corals
 Stylophora also showed an initial decrease that also occurred in the controls. However, the treated corals are significantly lower than the controls during the experiment, on 1/6 and 1/16 (Treatment 1 is lower), and 1/20 and 1/25 (Treatment 5.3 is lower, but again I think that 1/25 readings seem off). Values again recover by the end of the experiment and are not different between treated and control corals.
 
 Overall, there is some indication that fluconazole may temporarily reduce Fv/Fm in in Seriatopora and Stylophora, but these reductions were only around 5% relative to control values, and disappeared after ~2 weeks.
+
+# Figure 2 final version
+```{r}
+fig2 <- fig2 +
+  labs(
+    x = "Date",
+    y = expression(italic("Fv/Fm")),
+    color = "Fluconazole treatment\n(mg/mL)"
+  ) +
+  figure1_theme +
+  theme(
+    strip.text = element_text(size = 10, face = "italic")
+  )
+
+fig2
+ggsave(filename = "Figures/fig2.png", width = 180, height = 90, units = "mm", dpi = 300)
+```
+
+
+
 
 ```{r}
 #### Compare 2 control tanks vs. 4 "treated" tanks
@@ -347,8 +426,4 @@ sigtrt2 <- as_tibble(restrt2) %>%
 # When do we see significant differences between control and treated?
 knitr::kable(sigtrt2)
 ```
-
-
-
-
 
