@@ -32,6 +32,8 @@ theme_custom <- function() {
     )
 }
 
+day_breaks <- c(-4, 0, 3, 6, 8, 10, 13, 15, 17, 20, 22, 25)
+
 # Function to pivot PAM data to long form with column for AOI
 ipam_convert <- function(data) {
   data %>% select_if(~ !any(is.na(.))) %>%
@@ -93,6 +95,10 @@ yii <- pam %>%
 
 # Write processed Fv/Fm data to file
 write_csv(yii,"output/fvfm_processed.csv")
+
+# Day relative to fluconazole administration for plotting
+yii <- yii %>%
+  mutate(day = as.integer(date - as_date("2024-01-03")))
 ```
 
 # Bryopsis Fv/Fm
@@ -114,13 +120,14 @@ bryf <- bry %>%
          !(tank == 8 & date > "2024-01-20"))
 
 # Plot all Bryopsis fv/fm data
-bryfig1 <- ggplot(bry, aes(x = date, y = value, group = area, color = area)) +
+bryfig1 <- ggplot(bry, aes(x = day, y = value, group = area, color = area)) +
   geom_point() +
   geom_line() +
-  geom_vline(aes(xintercept = as_date("2024-01-03")), lty = 2) +
+  geom_vline(xintercept = 0, lty = 2) +
   facet_wrap(~ treatment + tank, nrow = 3,
              labeller = labeller(.rows = label_both)) +
-  scale_x_date(breaks = unique(bry$date)) +
+  scale_x_continuous(breaks = day_breaks) +
+  labs(x = "Days") +
   theme_custom() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
@@ -154,15 +161,20 @@ res <- as_tibble(all)
 # Plot means for each treatment over time
 # Plot overall mean for each treatment over time
 (fig1a <- res %>%
-  ggplot(aes(x = date, y = emmean, group = treatment, color = treatment)) +
+  mutate(day = as.integer(date - as_date("2024-01-03"))) %>%
+  filter(day < 25) %>%
+  ggplot(aes(x = day, y = emmean, group = treatment, color = treatment)) +
   geom_line(alpha = 0.5) +
   geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), width = 0.3, alpha = 0.5) +
   geom_point(alpha = 0.5, size = 0.75) + 
-  geom_vline(aes(xintercept = as_date("2024-01-03")), lty = 2) +
-  scale_x_date(breaks = unique(bry$date)) +
+  geom_vline(xintercept = 0, lty = 2) +
+  scale_x_continuous(breaks = day_breaks) +
   theme_custom() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  labs(title = "Average Fv/Fm of Bryopsis (all areas) in each treatment over time"))
+  labs(
+    title = "Average Fv/Fm of Bryopsis (all areas) in each treatment over time",
+    x = "Days"
+  ))
 
 # Test for differences between treatments on each date
 pwtests <- as_tibble(contrast(all, "pairwise"))
@@ -189,29 +201,33 @@ sigedges <- resedges %>%
   filter(p.value < 0.05)
 
 as_tibble(alledges) %>%
-  ggplot(aes(x = date, y = emmean, color = treatment, value = treatment)) +
+  mutate(day = as.integer(date - as_date("2024-01-03"))) %>%
+  ggplot(aes(x = day, y = emmean, color = treatment, value = treatment)) +
   geom_point() + 
   geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), width = 0.3) +
   geom_line() +
-  geom_vline(aes(xintercept = as_date("2024-01-03")), lty = 2) +
-  scale_x_date(breaks = unique(bry$date)) +
+  geom_vline(xintercept = 0, lty = 2) +
+  scale_x_continuous(breaks = day_breaks) +
   theme_custom() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  labs(title = "Average Fv/Fm of Bryopsis edges in each treatment over time")
+  labs(
+    title = "Average Fv/Fm of Bryopsis edges in each treatment over time",
+    x = "Days"
+  )
 
 knitr::kable(sigedges)
 ```
 
 When looking at just the Bryopsis edges, both Treatment 1 and Treatment 5.3 were significantly lower than the control on January 18th. After January 18th, the increases seen in the treated Bryopsis probably reflect Fv/Fm signal of fouling algae.
 
-The 1 mg/ml and 5.3 mg/ml treatments also don't look that different from one another, so we could combine these into "treated" vs. "untreated" (controls) to increase statistical power...
+The 1 mg/L and 5.3 mg/L treatments also don't look that different from one another, so we could combine these into "treated" vs. "untreated" (controls) to increase statistical power...
 
 ```{r, fig.height = 4, fig.width = 5}
 #### Compare 2 control tanks vs. 4 "treated" tanks
 bry2 <- bry %>%
   mutate(trt2 = case_when(as.numeric(as.character(treatment)) == 0 ~ "control",
                           as.numeric(as.character(treatment)) > 0  ~ "treated"),
-         trt2 = factor(trt2))
+         trt2 = factor(trt2, levels = c("control", "treated")))
 # Fit linear mixed model with treatment and date as fixed predictors, and tank as random
 mod<-lmer(value~trt2*factor(date)+(1|tank),data=filter(bry2, area == "edge"))
 # Means at each individual date
@@ -221,15 +237,20 @@ restrt2 <- contrast(alltrt2, "pairwise", adjust = "none")
 # there are differences between control and 4xtreated tanks, when looking at Bryopsis tips only
 
 (fig1b <- as_tibble(alltrt2) %>%
-  ggplot(aes(x = date, y = emmean, group = trt2, color = trt2)) +
+  mutate(day = as.integer(date - as_date("2024-01-03"))) %>%
+  filter(day < 25) %>%
+  ggplot(aes(x = day, y = emmean, group = trt2, color = trt2)) +
   geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), width = 0.3, alpha = 0.5) +
   geom_line(alpha = 0.5) +
   geom_point(alpha = 0.5, size = 0.75) + 
-  geom_vline(aes(xintercept = as_date("2024-01-03")), lty = 2) +
-  scale_x_date(breaks = unique(bry$date)) +
+  geom_vline(xintercept = 0, lty = 2) +
+  scale_x_continuous(breaks = day_breaks) +
   theme_custom() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  labs(title = "Average Fv/Fm of all treated vs. control Bryopsis edges over time"))
+  labs(
+    title = "Average Fv/Fm of all treated vs. control Bryopsis edges over time",
+    x = "Days"
+  ))
 
 sigtrt2 <- as_tibble(restrt2) %>% 
   filter(p.value < 0.05)
@@ -245,9 +266,9 @@ Combining the treated tanks together, we see that Bryopsis Fv/Fm (edges) is sign
 figure1_theme <- theme(
   plot.title = element_text(size = 10, face = "plain"),
   axis.title = element_text(size = 7),
-  axis.text = element_text(size = 5),
+  axis.text = element_text(size = 6),
   legend.title = element_text(size = 7),
-  legend.text = element_text(size = 5)
+  legend.text = element_text(size = 6)
 )
 
 fig1a <- fig1a +
@@ -256,9 +277,9 @@ fig1a <- fig1a +
       paste("A. ", italic("Fv/Fm"), " of ", italic("Bryopsis"),
             " (all areas) over time")
     ),
-    x = "Date",
+    x = "Days",
     y = expression(italic("Fv/Fm")),
-    color = "Fluconazole treatment\n(mg/mL)"
+    color = "Fluconazole treatment\n(mg/L)"
   ) +
   figure1_theme
 
@@ -268,14 +289,14 @@ fig1b <- fig1b +
       paste("B. ", italic("Fv/Fm"), " of ", italic("Bryopsis"),
             " (edges) over time")
     ),
-    x = "Date",
+    x = "Days",
     y = expression(italic("Fv/Fm")),
     color = "Fluconazole treatment"
   ) +
   scale_color_discrete(
     labels = c(
-      control = "Control (0 mg/mL)",
-      treated = "Treated (1 and 5.3 mg/mL)"
+      control = "Control\n(0 mg/L)",
+      treated = "Treated\n(1 and 5.3 mg/L)"
     )
   ) +
   figure1_theme
@@ -308,11 +329,12 @@ coral <- yii %>%
 
 
 # Plot all coral fv/fm data
-coralplot <- ggplot(coral, aes(x = date, y = value)) +
+coralplot <- ggplot(coral, aes(x = day, y = value)) +
   geom_point() +
   facet_wrap(~ treatment + tank + species + fragment, nrow = 3,
              labeller = labeller(.rows = label_both)) +
-  scale_x_date(breaks = unique(bry$date)) +
+  scale_x_continuous(breaks = day_breaks) +
+  labs(x = "Days") +
   theme_custom() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
@@ -325,13 +347,14 @@ coral <- coral %>%
   mutate(resid = residuals(mod),
          fit= fitted(mod))
 
-ggplot(coral, aes(x = date, y = value)) +
+ggplot(coral, aes(x = day, y = value)) +
   geom_point(aes(color = abs(resid) > 0.06)) +
   geom_line(aes(y = fit)) +
   facet_wrap(~ treatment + tank + species + fragment, nrow = 3,
              labeller = labeller(.rows = label_both)) +
-  scale_x_date(breaks = unique(bry$date)) +
+  scale_x_continuous(breaks = day_breaks) +
   scale_color_manual(values = c("black", "red")) +
+  labs(x = "Days") +
   theme_custom() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
@@ -347,15 +370,16 @@ mod <- lmer(value ~ factor(date) * treatment * species + (1|tank/species/fragmen
 emm <- emmeans(mod, specs = "treatment", by = c("species", "date"), level = 0.87)
 
 (fig2 <- as_tibble(emm) %>%
-  ggplot(aes(x = date, y = emmean, color = treatment, group = treatment)) +
+  mutate(day = as.integer(date - as_date("2024-01-03"))) %>%
+  ggplot(aes(x = day, y = emmean, color = treatment, group = treatment)) +
   geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), width = 0.5, alpha = 0.5) +
   geom_line(alpha = 0.5) +
   geom_point(alpha = 0.5, size = 0.75) +
-  scale_x_date(breaks = unique(bry$date)) +
+  scale_x_continuous(breaks = day_breaks) +
   facet_wrap(~species) +
   theme_custom() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  geom_vline(aes(xintercept = as_date("2024-01-03")), lty = 2))
+  geom_vline(xintercept = 0, lty = 2))
 
 res <- as_tibble(contrast(emm, "pairwise", adjust = "none"))
 res %>%
@@ -366,7 +390,7 @@ res %>%
 
 Acropora corals showed a ~10% decline in Fv/Fm over time, but this occurred in all treatments and the control, so there is no effect of treatment on Fv/Fm in Acropora.
 
-Seriatopora showed an initial decline in Fv/Fm that was larger in treated corals, such that treated corals. Treatment 1 mg/ml was significantly lower than control on 1/6, and Treatment 5.3 mg/ml was significantly lower than control on 1/13, 1/16, and 1/25 (I think the 1/25 readings might be erroneous). Fv/Fm recovers in the treated corals by the end of the experiment and is not different than the controls.
+Seriatopora showed an initial decline in Fv/Fm that was larger in treated corals, such that treated corals. Treatment 1 mg/L was significantly lower than control on 1/6, and Treatment 5.3 mg/L was significantly lower than control on 1/13, 1/16, and 1/25 (I think the 1/25 readings might be erroneous). Fv/Fm recovers in the treated corals by the end of the experiment and is not different than the controls.
 
 Stylophora also showed an initial decrease that also occurred in the controls. However, the treated corals are significantly lower than the controls during the experiment, on 1/6 and 1/16 (Treatment 1 is lower), and 1/20 and 1/25 (Treatment 5.3 is lower, but again I think that 1/25 readings seem off). Values again recover by the end of the experiment and are not different between treated and control corals.
 
@@ -376,9 +400,9 @@ Overall, there is some indication that fluconazole may temporarily reduce Fv/Fm 
 ```{r}
 fig2 <- fig2 +
   labs(
-    x = "Date",
+    x = "Days",
     y = expression(italic("Fv/Fm")),
-    color = "Fluconazole treatment\n(mg/mL)"
+    color = "Fluconazole treatment\n(mg/L)"
   ) +
   figure1_theme +
   theme(
@@ -408,16 +432,20 @@ restrt2 <- contrast(alltrt2, "pairwise", adjust = "none")
 # there are differences between control and 4xtreated tanks, when looking at Bryopsis tips only
 
 as_tibble(alltrt2) %>%
-  ggplot(aes(x = date, y = emmean, group = trt2, color = trt2)) +
+  mutate(day = as.integer(date - as_date("2024-01-03"))) %>%
+  ggplot(aes(x = day, y = emmean, group = trt2, color = trt2)) +
   facet_wrap(~species) +
   geom_point() + 
   geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), width = 0.3) +
   geom_line() +
-  geom_vline(aes(xintercept = as_date("2024-01-03")), lty = 2) +
-  scale_x_date(breaks = unique(bry$date)) +
+  geom_vline(xintercept = 0, lty = 2) +
+  scale_x_continuous(breaks = day_breaks) +
   theme_custom() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  labs(title = "Average Fv/Fm of all treated vs. control corals over time")
+  labs(
+    title = "Average Fv/Fm of all treated vs. control corals over time",
+    x = "Days"
+  )
 
 sigtrt2 <- as_tibble(restrt2) %>% 
   filter(p.value < 0.05) %>%
@@ -426,4 +454,3 @@ sigtrt2 <- as_tibble(restrt2) %>%
 # When do we see significant differences between control and treated?
 knitr::kable(sigtrt2)
 ```
-
